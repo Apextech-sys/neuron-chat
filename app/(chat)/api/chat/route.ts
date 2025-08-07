@@ -9,15 +9,13 @@ import {
 import { z } from 'zod';
 
 import { customModel } from '@/ai';
-import { models } from '@/ai/models';
-import { blocksPrompt, regularPrompt, systemPrompt } from '@/ai/prompts';
+import { systemPrompt } from '@/ai/prompts';
 import { getChatById, getDocumentById, getSession } from '@/db/cached-queries';
 import {
   saveChat,
   saveDocument,
   saveMessages,
   saveSuggestions,
-  deleteChatById,
 } from '@/db/mutations';
 import { createClient } from '@/lib/supabase/server';
 import { MessageRole } from '@/lib/supabase/types';
@@ -96,12 +94,15 @@ function formatMessageContent(message: CoreMessage): string {
             text: content.text,
           };
         }
-        return {
-          type: 'tool-call',
-          toolCallId: content.toolCallId,
-          toolName: content.toolName,
-          args: content.args,
-        };
+        if (content.type === 'tool-call') {
+          return {
+            type: 'tool-call',
+            toolCallId: (content as any).toolCallId,
+            toolName: (content as any).toolName,
+            args: (content as any).args,
+          };
+        }
+        return content;
       })
     );
   }
@@ -113,8 +114,7 @@ export async function POST(request: Request) {
   const {
     id,
     messages,
-    modelId,
-  }: { id: string; messages: Array<Message>; modelId: string } =
+  }: { id: string; messages: Array<Message> } =
     await request.json();
 
   const user = await getUser();
@@ -123,18 +123,19 @@ export async function POST(request: Request) {
     return new Response('Unauthorized', { status: 401 });
   }
 
-  const model = models.find((model) => model.id === modelId);
-
-  if (!model) {
-    return new Response('Model not found', { status: 404 });
-  }
-
   const coreMessages = convertToCoreMessages(messages);
   const userMessage = getMostRecentUserMessage(coreMessages);
 
   if (!userMessage) {
     return new Response('No user message found', { status: 400 });
   }
+
+  // Get the original message with ID from the messages array
+  const originalUserMessage = messages[messages.length - 1];
+  
+  // Debug logging to see what we're getting
+  console.log('Original user message:', JSON.stringify(originalUserMessage, null, 2));
+  console.log('Message ID:', originalUserMessage?.id);
 
   try {
     const chat = await getChatById(id);
@@ -152,7 +153,7 @@ export async function POST(request: Request) {
       chatId: id,
       messages: [
         {
-          id: generateUUID(),
+          id: originalUserMessage?.id || generateUUID(), // Use original ID or generate one
           chat_id: id,
           role: userMessage.role as MessageRole,
           content: formatMessageContent(userMessage),
@@ -164,7 +165,7 @@ export async function POST(request: Request) {
     const streamingData = new StreamData();
 
     const result = await streamText({
-      model: customModel(model.apiIdentifier),
+      model: customModel(),
       system: systemPrompt,
       messages: coreMessages,
       maxSteps: 5,
@@ -201,7 +202,7 @@ export async function POST(request: Request) {
 
             // Generate content
             const { fullStream } = await streamText({
-              model: customModel(model.apiIdentifier),
+              model: customModel(),
               system:
                 'Write about the given topic. Markdown is supported. Use headings wherever appropriate.',
               prompt: title,
@@ -308,7 +309,7 @@ export async function POST(request: Request) {
             });
 
             const { fullStream } = await streamText({
-              model: customModel(model.apiIdentifier),
+              model: customModel(),
               system:
                 'You are a helpful writing assistant. Based on the description, please update the piece of writing.',
               experimental_providerMetadata: {
@@ -386,7 +387,7 @@ export async function POST(request: Request) {
             }> = [];
 
             const { elementStream } = await streamObject({
-              model: customModel(model.apiIdentifier),
+              model: customModel(),
               system:
                 'You are a help writing assistant. Given a piece of writing, please offer suggestions to improve the piece of writing and describe the change. It is very important for the edits to contain full sentences instead of just words. Max 5 suggestions.',
               prompt: document.content,
@@ -454,34 +455,24 @@ export async function POST(request: Request) {
           },
         },
       },
-      onFinish: async ({ responseMessages }) => {
+      onFinish: async (result) => {
         if (user && user.id) {
           try {
-            const responseMessagesWithoutIncompleteToolCalls =
-              sanitizeResponseMessages(responseMessages);
+            // Save the assistant's response message - generate ID since result.response.id doesn't exist
+            const assistantMessage = {
+              id: generateUUID(), // Generate a proper ID for the assistant message
+              chat_id: id,
+              role: 'assistant' as MessageRole,
+              content: result.text || '',
+              created_at: new Date().toISOString(),
+            };
 
             await saveMessages({
               chatId: id,
-              messages: responseMessagesWithoutIncompleteToolCalls.map(
-                (message) => {
-                  const messageId = generateUUID();
-
-                  if (message.role === 'assistant') {
-                    streamingData.appendMessageAnnotation({
-                      messageIdFromServer: messageId,
-                    });
-                  }
-
-                  return {
-                    id: messageId,
-                    chat_id: id,
-                    role: message.role as MessageRole,
-                    content: formatMessageContent(message),
-                    created_at: new Date().toISOString(),
-                  };
-                }
-              ),
+              messages: [assistantMessage],
             });
+
+            console.log('Chat completed successfully');
           } catch (error) {
             console.error('Failed to save chat:', error);
           }
@@ -501,53 +492,84 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Error in chat route:', error);
     if (error instanceof Error && error.message === 'Chat ID already exists') {
-      // If chat already exists, just continue with the message saving
-      await saveMessages({
-        chatId: id,
-        messages: [
-          {
+      // Chat already exists, skip chat creation and just save the user message
+      console.log('Chat already exists, continuing with message saving...');
+      // The main flow will continue and handle the user message and streaming
+    } else {
+      return new Response('An error occurred while processing your request', {
+        status: 500,
+      });
+    }
+  }
+
+  // Continue with normal flow (this runs whether chat was new or already existed)
+  try {
+    await saveMessages({
+      chatId: id,
+      messages: [
+        {
+          id: originalUserMessage?.id || generateUUID(), // Use original ID or generate one
+          chat_id: id,
+          role: userMessage.role as MessageRole,
+          content: formatMessageContent(userMessage),
+          created_at: new Date().toISOString(),
+        },
+      ],
+    });
+  } catch (saveError) {
+    console.error('Failed to save user message:', saveError);
+    return new Response('Failed to save message', { status: 500 });
+  }
+
+  const streamingData = new StreamData();
+
+  const result = await streamText({
+    model: customModel(),
+    system: systemPrompt,
+    messages: coreMessages,
+    maxSteps: 5,
+    experimental_activeTools: ['getWeather'],
+    tools: {
+      getWeather: {
+        description: 'Get the current weather at a location',
+        parameters: z.object({
+          latitude: z.number(),
+          longitude: z.number(),
+        }),
+        execute: async ({ latitude, longitude }) => {
+          const response = await fetch(
+            `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m&hourly=temperature_2m&daily=sunrise,sunset&timezone=auto`
+          );
+          const weatherData = await response.json();
+          return weatherData;
+        },
+      },
+    },
+    onFinish: async (result) => {
+      if (user && user.id) {
+        try {
+          const assistantMessage = {
             id: generateUUID(),
             chat_id: id,
-            role: userMessage.role as MessageRole,
-            content: formatMessageContent(userMessage),
+            role: 'assistant' as MessageRole,
+            content: result.text || '',
             created_at: new Date().toISOString(),
-          },
-        ],
-      });
-    } else {
-      throw error; // Re-throw other errors
-    }
-  }
+          };
+
+          await saveMessages({
+            chatId: id,
+            messages: [assistantMessage],
+          });
+
+          console.log('Chat completed successfully');
+        } catch (error) {
+          console.error('Failed to save assistant message:', error);
+        }
+      }
+      streamingData.close();
+    },
+  });
+
+  return result.toDataStreamResponse({ data: streamingData });
 }
 
-export async function DELETE(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const id = searchParams.get('id');
-
-  if (!id) {
-    return new Response('Not Found', { status: 404 });
-  }
-
-  const user = await getUser();
-
-  try {
-    const chat = await getChatById(id);
-
-    if (!chat) {
-      return new Response('Chat not found', { status: 404 });
-    }
-
-    if (chat.user_id !== user.id) {
-      return new Response('Unauthorized', { status: 401 });
-    }
-
-    await deleteChatById(id, user.id);
-
-    return new Response('Chat deleted', { status: 200 });
-  } catch (error) {
-    console.error('Error deleting chat:', error);
-    return new Response('An error occurred while processing your request', {
-      status: 500,
-    });
-  }
-}

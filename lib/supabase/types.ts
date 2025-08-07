@@ -43,32 +43,73 @@ export type Database = {
           },
         ];
       };
-      documents: {
+      formal_documents: {
         Row: {
           content: string | null;
           created_at: string;
+          document_type: 'proof_of_address' | 'proof_of_payment' | 'identification' | 'debit_order_authorisation';
+          file_reference_id: string | null;
           id: string;
+          priority_level: 'low' | 'normal' | 'high' | 'urgent';
+          reviewed_by: string | null;
+          scan_details: Record<string, any> | null;
+          scan_status: 'pending' | 'clean' | 'infected' | 'error';
+          submission_notes: string | null;
           title: string;
+          updated_at: string;
           user_id: string;
+          validation_notes: string | null;
         };
         Insert: {
           content?: string | null;
           created_at?: string;
+          document_type?: 'proof_of_address' | 'proof_of_payment' | 'identification' | 'debit_order_authorisation';
+          file_reference_id?: string | null;
           id?: string;
+          priority_level?: 'low' | 'normal' | 'high' | 'urgent';
+          reviewed_by?: string | null;
+          scan_details?: Record<string, any> | null;
+          scan_status?: 'pending' | 'clean' | 'infected' | 'error';
+          submission_notes?: string | null;
           title: string;
+          updated_at?: string;
           user_id: string;
+          validation_notes?: string | null;
         };
         Update: {
           content?: string | null;
           created_at?: string;
+          document_type?: 'proof_of_address' | 'proof_of_payment' | 'identification' | 'debit_order_authorisation';
+          file_reference_id?: string | null;
           id?: string;
+          priority_level?: 'low' | 'normal' | 'high' | 'urgent';
+          reviewed_by?: string | null;
+          scan_details?: Record<string, any> | null;
+          scan_status?: 'pending' | 'clean' | 'infected' | 'error';
+          submission_notes?: string | null;
           title?: string;
+          updated_at?: string;
           user_id?: string;
+          validation_notes?: string | null;
         };
         Relationships: [
           {
-            foreignKeyName: 'documents_user_id_fkey';
+            foreignKeyName: 'formal_documents_user_id_fkey';
             columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'formal_documents_file_reference_id_fkey';
+            columns: ['file_reference_id'];
+            isOneToOne: false;
+            referencedRelation: 'file_uploads';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'formal_documents_reviewed_by_fkey';
+            columns: ['reviewed_by'];
             isOneToOne: false;
             referencedRelation: 'users';
             referencedColumns: ['id'];
@@ -81,42 +122,63 @@ export type Database = {
           chat_id: string;
           content_type: string;
           created_at: string;
+          deleted_at: string | null;
+          file_hash: string | null;
           filename: string;
           id: string;
           original_name: string;
+          scan_date: string | null;
+          scan_details: Record<string, any> | null;
+          scan_status: 'pending' | 'clean' | 'infected' | 'error';
           size: number;
           storage_path: string;
+          updated_at: string;
           url: string;
           user_id: string;
           version: number;
+          virustotal_id: string | null;
         };
         Insert: {
           bucket_id?: string;
           chat_id: string;
           content_type: string;
           created_at?: string;
+          deleted_at?: string | null;
+          file_hash?: string | null;
           filename: string;
           id?: string;
           original_name: string;
+          scan_date?: string | null;
+          scan_details?: Record<string, any> | null;
+          scan_status?: 'pending' | 'clean' | 'infected' | 'error';
           size: number;
           storage_path: string;
+          updated_at?: string;
           url: string;
           user_id: string;
           version?: number;
+          virustotal_id?: string | null;
         };
         Update: {
           bucket_id?: string;
           chat_id?: string;
           content_type?: string;
           created_at?: string;
+          deleted_at?: string | null;
+          file_hash?: string | null;
           filename?: string;
           id?: string;
           original_name?: string;
+          scan_date?: string | null;
+          scan_details?: Record<string, any> | null;
+          scan_status?: 'pending' | 'clean' | 'infected' | 'error';
           size?: number;
           storage_path?: string;
+          updated_at?: string;
           url?: string;
           user_id?: string;
           version?: number;
+          virustotal_id?: string | null;
         };
         Relationships: [
           {
@@ -163,50 +225,273 @@ export type Database = {
           },
         ];
       };
-      suggestions: {
+      document_validations: {
         Row: {
           created_at: string;
-          description: string | null;
           document_created_at: string;
           document_id: string;
           id: string;
-          is_resolved: boolean;
-          original_text: string;
-          suggested_text: string;
+          review_notes: string | null;
+          reviewed_at: string | null;
+          reviewer_id: string | null;
+          updated_at: string;
           user_id: string;
+          validation_status: 'pending_review' | 'under_review' | 'approved' | 'rejected' | 'requires_resubmission';
         };
         Insert: {
           created_at?: string;
-          description?: string | null;
           document_created_at: string;
           document_id: string;
           id?: string;
-          is_resolved?: boolean;
-          original_text: string;
-          suggested_text: string;
+          review_notes?: string | null;
+          reviewed_at?: string | null;
+          reviewer_id?: string | null;
+          updated_at?: string;
           user_id: string;
+          validation_status?: 'pending_review' | 'under_review' | 'approved' | 'rejected' | 'requires_resubmission';
         };
         Update: {
           created_at?: string;
-          description?: string | null;
           document_created_at?: string;
           document_id?: string;
           id?: string;
-          is_resolved?: boolean;
-          original_text?: string;
-          suggested_text?: string;
+          review_notes?: string | null;
+          reviewed_at?: string | null;
+          reviewer_id?: string | null;
+          updated_at?: string;
+          user_id?: string;
+          validation_status?: 'pending_review' | 'under_review' | 'approved' | 'rejected' | 'requires_resubmission';
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'document_validations_document_id_fkey';
+            columns: ['document_id', 'document_created_at'];
+            isOneToOne: false;
+            referencedRelation: 'formal_documents';
+            referencedColumns: ['id', 'created_at'];
+          },
+          {
+            foreignKeyName: 'document_validations_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'document_validations_reviewer_id_fkey';
+            columns: ['reviewer_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      security_logs: {
+        Row: {
+          browser_info: string | null;
+          city: string | null;
+          country_code: string | null;
+          created_at: string;
+          device_info: string | null;
+          event_type: 'malware_detected' | 'validation_failed' | 'upload_blocked' | 'file_quarantined' | 'suspicious_activity' | 'unauthorized_access' | 'rate_limit_exceeded';
+          file_hash: string | null;
+          file_name: string | null;
+          id: string;
+          ip_address: string | null;
+          os_info: string | null;
+          resolution_notes: string | null;
+          resolved: boolean;
+          resolved_at: string | null;
+          resolved_by: string | null;
+          session_id: string | null;
+          severity_level: 'low' | 'medium' | 'high' | 'critical';
+          threat_details: Record<string, any> | null;
+          user_agent: string | null;
+          user_id: string | null;
+        };
+        Insert: {
+          browser_info?: string | null;
+          city?: string | null;
+          country_code?: string | null;
+          created_at?: string;
+          device_info?: string | null;
+          event_type: 'malware_detected' | 'validation_failed' | 'upload_blocked' | 'file_quarantined' | 'suspicious_activity' | 'unauthorized_access' | 'rate_limit_exceeded';
+          file_hash?: string | null;
+          file_name?: string | null;
+          id?: string;
+          ip_address?: string | null;
+          os_info?: string | null;
+          resolution_notes?: string | null;
+          resolved?: boolean;
+          resolved_at?: string | null;
+          resolved_by?: string | null;
+          session_id?: string | null;
+          severity_level?: 'low' | 'medium' | 'high' | 'critical';
+          threat_details?: Record<string, any> | null;
+          user_agent?: string | null;
+          user_id?: string | null;
+        };
+        Update: {
+          browser_info?: string | null;
+          city?: string | null;
+          country_code?: string | null;
+          created_at?: string;
+          device_info?: string | null;
+          event_type?: 'malware_detected' | 'validation_failed' | 'upload_blocked' | 'file_quarantined' | 'suspicious_activity' | 'unauthorized_access' | 'rate_limit_exceeded';
+          file_hash?: string | null;
+          file_name?: string | null;
+          id?: string;
+          ip_address?: string | null;
+          os_info?: string | null;
+          resolution_notes?: string | null;
+          resolved?: boolean;
+          resolved_at?: string | null;
+          resolved_by?: string | null;
+          session_id?: string | null;
+          severity_level?: 'low' | 'medium' | 'high' | 'critical';
+          threat_details?: Record<string, any> | null;
+          user_agent?: string | null;
+          user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'security_logs_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'security_logs_resolved_by_fkey';
+            columns: ['resolved_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      quarantined_files: {
+        Row: {
+          auto_delete_at: string;
+          file_hash: string;
+          file_name: string;
+          id: string;
+          manually_reviewed: boolean;
+          original_file_id: string | null;
+          quarantine_path: string;
+          quarantined_at: string;
+          review_notes: string | null;
+          reviewed_at: string | null;
+          reviewed_by: string | null;
+          threat_details: Record<string, any> | null;
+          threat_level: 'low' | 'medium' | 'high' | 'critical';
+          user_id: string;
+        };
+        Insert: {
+          auto_delete_at?: string;
+          file_hash: string;
+          file_name: string;
+          id?: string;
+          manually_reviewed?: boolean;
+          original_file_id?: string | null;
+          quarantine_path: string;
+          quarantined_at?: string;
+          review_notes?: string | null;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          threat_details?: Record<string, any> | null;
+          threat_level: 'low' | 'medium' | 'high' | 'critical';
+          user_id: string;
+        };
+        Update: {
+          auto_delete_at?: string;
+          file_hash?: string;
+          file_name?: string;
+          id?: string;
+          manually_reviewed?: boolean;
+          original_file_id?: string | null;
+          quarantine_path?: string;
+          quarantined_at?: string;
+          review_notes?: string | null;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          threat_details?: Record<string, any> | null;
+          threat_level?: 'low' | 'medium' | 'high' | 'critical';
           user_id?: string;
         };
         Relationships: [
           {
-            foreignKeyName: 'suggestions_document_id_document_created_at_fkey';
-            columns: ['document_id', 'document_created_at'];
+            foreignKeyName: 'quarantined_files_original_file_id_fkey';
+            columns: ['original_file_id'];
             isOneToOne: false;
-            referencedRelation: 'documents';
-            referencedColumns: ['id', 'created_at'];
+            referencedRelation: 'file_uploads';
+            referencedColumns: ['id'];
           },
           {
-            foreignKeyName: 'suggestions_user_id_fkey';
+            foreignKeyName: 'quarantined_files_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'quarantined_files_reviewed_by_fkey';
+            columns: ['reviewed_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      file_upload_sessions: {
+        Row: {
+          created_at: string;
+          current_step: string | null;
+          document_type: 'proof_of_address' | 'proof_of_payment' | 'identification' | 'debit_order_authorisation' | null;
+          error_message: string | null;
+          expires_at: string;
+          id: string;
+          metadata: Record<string, any> | null;
+          progress_percentage: number;
+          session_token: string;
+          status: 'initiated' | 'uploading' | 'validating' | 'scanning' | 'completed' | 'failed' | 'cancelled';
+          updated_at: string;
+          upload_type: 'generic' | 'formal_document';
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          current_step?: string | null;
+          document_type?: 'proof_of_address' | 'proof_of_payment' | 'identification' | 'debit_order_authorisation' | null;
+          error_message?: string | null;
+          expires_at?: string;
+          id?: string;
+          metadata?: Record<string, any> | null;
+          progress_percentage?: number;
+          session_token: string;
+          status?: 'initiated' | 'uploading' | 'validating' | 'scanning' | 'completed' | 'failed' | 'cancelled';
+          updated_at?: string;
+          upload_type: 'generic' | 'formal_document';
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          current_step?: string | null;
+          document_type?: 'proof_of_address' | 'proof_of_payment' | 'identification' | 'debit_order_authorisation' | null;
+          error_message?: string | null;
+          expires_at?: string;
+          id?: string;
+          metadata?: Record<string, any> | null;
+          progress_percentage?: number;
+          session_token?: string;
+          status?: 'initiated' | 'uploading' | 'validating' | 'scanning' | 'completed' | 'failed' | 'cancelled';
+          updated_at?: string;
+          upload_type?: 'generic' | 'formal_document';
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'file_upload_sessions_user_id_fkey';
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
@@ -514,12 +799,19 @@ export function handleDatabaseError(error: PostgrestError | null) {
   }
 }
 
-// Add Document type
-export type Document = Database['public']['Tables']['documents']['Row'];
+// Add formal document types
+export type FormalDocument = Database['public']['Tables']['formal_documents']['Row'];
+export type DocumentValidation = Database['public']['Tables']['document_validations']['Row'];
 export type Vote = Database['public']['Tables']['votes']['Row'];
 export type Chat = Database['public']['Tables']['chats']['Row'];
 
-export type Suggestion = Database['public']['Tables']['suggestions']['Row'];
+// Document type enums for easier use
+export type DocumentType = 'proof_of_address' | 'proof_of_payment' | 'identification' | 'debit_order_authorisation';
+export type ValidationStatus = 'pending_review' | 'under_review' | 'approved' | 'rejected' | 'requires_resubmission';
+
+// Legacy type aliases (for compatibility during migration)
+export type Document = FormalDocument;
+export type Suggestion = DocumentValidation;
 
 // Add DatabaseMessage type to match the database schema
 export interface DatabaseMessage {

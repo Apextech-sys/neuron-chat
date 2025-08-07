@@ -19,6 +19,7 @@ import { sanitizeUIMessages } from '@/lib/utils';
 
 import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
 import { PreviewAttachment } from './preview-attachment';
+import { FormalDocumentUpload } from './formal-document-upload';
 import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
 
@@ -308,17 +309,24 @@ export function MultimodalInput({
         </Button>
       )}
 
-      <Button
-        className="rounded-full p-1.5 h-fit absolute bottom-2 right-11 m-0.5 dark:border-zinc-700"
-        onClick={(event) => {
-          event.preventDefault();
-          fileInputRef.current?.click();
-        }}
-        variant="outline"
-        disabled={isLoading}
-      >
-        <PaperclipIcon size={14} />
-      </Button>
+      <div className="absolute bottom-2 right-11 m-0.5 flex space-x-1">
+        <FormalDocumentUpload
+          chatId={chatId}
+          disabled={isLoading}
+        />
+        <Button
+          className="rounded-full p-1.5 h-fit dark:border-zinc-700"
+          onClick={(event) => {
+            event.preventDefault();
+            fileInputRef.current?.click();
+          }}
+          variant="outline"
+          disabled={isLoading}
+          title="Upload general files"
+        >
+          <PaperclipIcon size={14} />
+        </Button>
+      </div>
     </div>
   );
 }

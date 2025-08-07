@@ -2,27 +2,17 @@
 
 import { isToday, isYesterday, subMonths, subWeeks } from 'date-fns';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { memo } from 'react';
-import { toast } from 'sonner';
 
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { Chat } from '@/lib/supabase/types';
 
-import { MoreHorizontalIcon, TrashIcon } from './icons';
 
 type GroupedChats = {
   today: Chat[];
@@ -45,12 +35,10 @@ const GroupHeader = memo(function GroupHeader({ title }: { title: string }) {
 const ChatItem = memo(function ChatItem({
   chat,
   isActive,
-  onDelete,
   setOpenMobile,
 }: {
   chat: Chat;
   isActive: boolean;
-  onDelete: (chatId: string) => void;
   setOpenMobile: (open: boolean) => void;
 }) {
   return (
@@ -60,26 +48,6 @@ const ChatItem = memo(function ChatItem({
           <span>{chat.title || 'New Chat'}</span>
         </Link>
       </SidebarMenuButton>
-      <DropdownMenu modal={true}>
-        <DropdownMenuTrigger asChild>
-          <SidebarMenuAction
-            className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground mr-0.5"
-            showOnHover={!isActive}
-          >
-            <MoreHorizontalIcon />
-            <span className="sr-only">More</span>
-          </SidebarMenuAction>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side="bottom" align="end">
-          <DropdownMenuItem
-            className="cursor-pointer text-destructive focus:bg-destructive/15 focus:text-destructive dark:text-red-500"
-            onSelect={() => onDelete(chat.id)}
-          >
-            <TrashIcon />
-            <span>Delete</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
     </SidebarMenuItem>
   );
 });
@@ -127,27 +95,7 @@ export function GroupedChatList({
   currentChatId: string;
   setOpenMobile: (open: boolean) => void;
 }) {
-  const router = useRouter();
   const groupedChats = groupChatsByDate(chats);
-
-  const handleDelete = async (chatId: string) => {
-    try {
-      const response = await fetch(`/api/chat?id=${chatId}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) throw new Error('Failed to delete chat');
-
-      toast.success('Chat deleted successfully');
-
-      if (chatId === currentChatId) {
-        router.push('/');
-      }
-    } catch (error) {
-      console.error('Failed to delete chat:', error);
-      toast.error('Failed to delete chat');
-    }
-  };
 
   return (
     <SidebarGroup>
@@ -161,7 +109,6 @@ export function GroupedChatList({
                   key={chat.id}
                   chat={chat}
                   isActive={chat.id === currentChatId}
-                  onDelete={handleDelete}
                   setOpenMobile={setOpenMobile}
                 />
               ))}
@@ -176,7 +123,6 @@ export function GroupedChatList({
                   key={chat.id}
                   chat={chat}
                   isActive={chat.id === currentChatId}
-                  onDelete={handleDelete}
                   setOpenMobile={setOpenMobile}
                 />
               ))}
@@ -191,7 +137,6 @@ export function GroupedChatList({
                   key={chat.id}
                   chat={chat}
                   isActive={chat.id === currentChatId}
-                  onDelete={handleDelete}
                   setOpenMobile={setOpenMobile}
                 />
               ))}
@@ -206,7 +151,6 @@ export function GroupedChatList({
                   key={chat.id}
                   chat={chat}
                   isActive={chat.id === currentChatId}
-                  onDelete={handleDelete}
                   setOpenMobile={setOpenMobile}
                 />
               ))}
@@ -221,7 +165,6 @@ export function GroupedChatList({
                   key={chat.id}
                   chat={chat}
                   isActive={chat.id === currentChatId}
-                  onDelete={handleDelete}
                   setOpenMobile={setOpenMobile}
                 />
               ))}
