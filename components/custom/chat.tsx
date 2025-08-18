@@ -23,9 +23,11 @@ type Vote = Database['public']['Tables']['votes']['Row'];
 export function Chat({
   id,
   initialMessages,
+  selectedModelId,
 }: {
   id: string;
   initialMessages: Array<Message>;
+  selectedModelId: string;
 }) {
   const { mutate } = useSWRConfig();
 
@@ -40,8 +42,9 @@ export function Chat({
     stop,
     data: streamingData,
   } = useChat({
-    body: { id },
+    body: { id, modelId: selectedModelId },
     initialMessages,
+    generateId: () => Math.random().toString(36).substring(7), // Simple unique ID generation
     onFinish: () => {
       mutate('/api/history');
     },

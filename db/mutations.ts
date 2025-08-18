@@ -1,11 +1,20 @@
 import { revalidateTag } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import {
-  handleDatabaseError,
-  PostgrestError,
-  type Client,
-  type Message,
-} from '@/lib/supabase/types';
+import { type SupabaseClient } from '@supabase/supabase-js';
+import { type Database, type Tables, type Enums } from '@/lib/supabase/types';
+import { type Message as VercelMessage } from 'ai';
+
+// Custom types that were likely removed during type generation
+export type Client = SupabaseClient<Database>;
+export type Message = Tables<'messages'> & VercelMessage;
+export type PostgrestError = import('@supabase/supabase-js').PostgrestError;
+
+export function handleDatabaseError(error: PostgrestError) {
+  console.error('Database error:', error);
+  // In a real application, you might want to log this to a service like Sentry
+  // and/or transform the error into a more user-friendly message.
+  throw new Error(`Database operation failed: ${error.message}`);
+}
 
 const getSupabase = async () => createClient();
 
@@ -77,33 +86,33 @@ export async function saveMessages({
   await mutateQuery(
     async (client, { chatId, messages }) => {
       const formattedMessages = messages.map((message) => {
-        // Handle tool invocations and content
-        let content = message.content;
+        const { id, role, content, toolInvocations, annotations, created_at } = message;
 
-        // If message has tool invocations, save them as part of the content
-        if (message?.toolInvocations && message?.toolInvocations?.length > 0) {
-          content = JSON.stringify({
-            content: message.content,
-            toolInvocations: message.toolInvocations,
-          });
-        } else if (typeof content === 'object') {
-          content = JSON.stringify(content);
-        }
+        // The 'content' can be a simple string or a structured object.
+        // We need to ensure it's stored as a JSON object if it's not already a string.
+        let finalContent: any = content;
 
-        // Handle annotations if present
-        if (message.annotations && message.annotations?.length > 0) {
-          content = JSON.stringify({
+        // If there are tool invocations or annotations, we need to wrap the content
+        // in a JSON object that includes them.
+        if (toolInvocations || annotations) {
+          finalContent = {
             content: content,
-            annotations: message.annotations,
-          });
+            ...(toolInvocations && { toolInvocations }),
+            ...(annotations && { annotations }),
+          };
+        }
+        
+        // Ensure the final content is a JSON string for the database
+        if (typeof finalContent !== 'string') {
+          finalContent = JSON.stringify(finalContent);
         }
 
         return {
-          id: message.id,
+          id,
           chat_id: chatId,
-          role: message.role,
-          content: content,
-          created_at: message.created_at || new Date().toISOString(),
+          role,
+          content: finalContent,
+          created_at: created_at || new Date().toISOString(),
         };
       });
 
@@ -203,7 +212,7 @@ export async function saveDocument({
         const { error } = await client.from('documents').insert({
           id,
           title,
-          content,
+          content: content || '',
           user_id: userId,
           created_at: timestamp,
         });
@@ -298,7 +307,7 @@ export async function saveSuggestions1({
         document_created_at: args.documentCreatedAt,
         original_text: args.originalText,
         suggested_text: args.suggestedText,
-        description: args.description,
+        description: args.description || '',
         user_id: args.userId,
       });
       if (error) throw error;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import cx from 'classnames';
@@ -14,18 +14,23 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '../ui/badge';
-import { DocumentType } from '@/lib/supabase/types';
+import { Database } from '@/lib/supabase/types';
+type DocumentType = Database['public']['Enums']['document_type_enum'];
 
 // Icons - using available icons from the icons file
-import { FileIcon, ChevronDownIcon, CheckCirclFillIcon, CrossIcon, LoaderIcon } from './icons';
+import { FileIcon, ChevronDownIcon, CheckCirclFillIcon, CrossIcon, LoaderIcon, InfoIcon } from './icons';
+
+type StepStatus = 'pending' | 'active' | 'completed' | 'failed';
+type UploadStatus = 'initiated' | 'uploading' | 'validating' | 'queued' | 'scanning' | 'completed' | 'failed';
 
 interface DocumentUploadProgress {
   fileName: string;
   documentType: DocumentType;
   progress: number;
-  status: 'uploading' | 'validating' | 'scanning' | 'completed' | 'failed';
+  status: UploadStatus;
   error?: string;
   sessionToken?: string;
+  steps: { name: string; status: StepStatus }[];
 }
 
 interface FormalDocumentUploadProps {
@@ -63,6 +68,21 @@ export function FormalDocumentUpload({ chatId, disabled = false, className }: Fo
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedDocumentType, setSelectedDocumentType] = useState<DocumentType | null>(null);
+
+  // Track mounted state and pending timers to avoid memory leaks
+  const isMountedRef = useRef(true);
+  const timeoutsRef = useRef<number[]>([]);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      // Clear pending timers
+      for (const t of timeoutsRef.current) {
+        clearTimeout(t);
+      }
+      timeoutsRef.current = [];
+    };
+  }, []);
 
   const validateFile = useCallback((file: File, documentType: DocumentType) => {
     // Check file size
@@ -118,41 +138,72 @@ export function FormalDocumentUpload({ chatId, disabled = false, className }: Fo
     const poll = async () => {
       try {
         const response = await fetch(`/api/formal-documents/upload/status?sessionToken=${sessionToken}`);
-        
         if (!response.ok) {
           throw new Error(`Status check failed: ${response.status}`);
         }
-        
-        const data = await response.json();
+
+        const data = await response.json() as {
+          status: UploadStatus,
+          progress_percentage?: number,
+          error_message?: string
+        };
+
+        if (!isMountedRef.current) {
+          return;
+        }
 
         setUploads(current =>
-          current.map(upload =>
-            upload.sessionToken === sessionToken
-              ? {
-                  ...upload,
-                  progress: data.progress_percentage || 0,
-                  status: data.status,
-                  error: data.error_message
-                }
-              : upload
-          )
+          current.map(upload => {
+            if (upload.sessionToken !== sessionToken) return upload;
+
+            const { status: apiStatus, error_message } = data;
+            
+            const stepMap: Record<string, number> = { 'uploading': 0, 'queued': 1, 'validating': 1, 'scanning': 2 };
+            const activeStepIndex = stepMap[apiStatus] ?? -1;
+
+            const finalSteps: typeof upload.steps = upload.steps.map((step, index): typeof step => {
+              if (apiStatus === 'completed') return { ...step, status: 'completed' };
+              if (apiStatus === 'failed') {
+                return (index === activeStepIndex || step.status === 'active') ? { ...step, status: 'failed' } : step;
+              }
+              if (activeStepIndex > -1) {
+                if (index < activeStepIndex) return { ...step, status: 'completed' };
+                if (index === activeStepIndex) return { ...step, status: 'active' };
+                return { ...step, status: 'pending' };
+              }
+              return step;
+            });
+
+            return {
+              ...upload,
+              status: apiStatus,
+              error: error_message,
+              steps: finalSteps,
+            };
+          })
         );
 
         if (data.status === 'completed') {
-          toast.success(`${fileName} uploaded and validated successfully!`);
+          if (isMountedRef.current) {
+            toast.success(`${fileName} uploaded and validated successfully!`);
+          }
           return;
         }
 
         if (data.status === 'failed') {
-          toast.error(`Failed to upload ${fileName}: ${data.error_message}`);
+          if (isMountedRef.current) {
+            toast.error(`Failed to upload ${fileName}: ${data.error_message}`);
+          }
           return;
         }
 
         attempts++;
         if (attempts < maxAttempts && ['initiated', 'uploading', 'validating', 'scanning'].includes(data.status)) {
-          setTimeout(poll, 5000); // Poll every 5 seconds
+          const t = window.setTimeout(poll, 5000);
+          timeoutsRef.current.push(t);
         } else if (attempts >= maxAttempts) {
-          // Timeout - mark as failed
+          if (!isMountedRef.current) return;
+
           setUploads(current =>
             current.map(upload =>
               upload.sessionToken === sessionToken
@@ -164,6 +215,8 @@ export function FormalDocumentUpload({ chatId, disabled = false, className }: Fo
         }
       } catch (error) {
         console.error('Error polling upload status:', error);
+        if (!isMountedRef.current) return;
+
         setUploads(current =>
           current.map(upload =>
             upload.sessionToken === sessionToken
@@ -182,12 +235,17 @@ export function FormalDocumentUpload({ chatId, disabled = false, className }: Fo
     try {
       validateFile(file, documentType);
 
-      // Add to uploads list
+      // Add to uploads list with initial steps
       setUploads(current => [...current, {
         fileName: file.name,
         documentType,
         progress: 0,
-        status: 'uploading'
+        status: 'uploading',
+        steps: [
+          { name: 'Uploading', status: 'active' },
+          { name: 'Queued', status: 'pending' },
+          { name: 'Scanning', status: 'pending' },
+        ],
       }]);
 
       // Start upload and get session token
@@ -243,26 +301,31 @@ export function FormalDocumentUpload({ chatId, disabled = false, className }: Fo
     setUploads(current => current.filter((_, i) => i !== index));
   }, []);
 
-  const getStatusIcon = (status: DocumentUploadProgress['status']) => {
+  const getStatusIcon = (status: UploadStatus) => {
     switch (status) {
       case 'completed':
-        return <CheckCirclFillIcon size={16} />;
+        return <div className="text-green-500"><CheckCirclFillIcon size={20} /></div>;
       case 'failed':
-        return <CrossIcon size={16} />;
+        return <div className="text-red-500"><InfoIcon size={20} /></div>;
       default:
-        return <LoaderIcon size={16} />;
+        return <div className="animate-spin text-muted-foreground"><LoaderIcon size={20} /></div>;
     }
   };
 
-  const getStatusLabel = (status: DocumentUploadProgress['status']) => {
-    switch (status) {
-      case 'uploading': return 'Uploading...';
-      case 'validating': return 'Validating file...';
-      case 'scanning': return 'Security scanning...';
-      case 'completed': return 'Complete';
-      case 'failed': return 'Failed';
-      default: return 'Processing...';
-    }
+  const UploadStep = ({ name, status }: { name: string; status: 'pending' | 'active' | 'completed' | 'failed' }) => {
+    const statusClasses = {
+      pending: 'border-muted-foreground/20 text-muted-foreground',
+      active: 'border-primary text-primary animate-pulse',
+      completed: 'border-green-500 bg-green-500/10 text-green-500',
+      failed: 'border-red-500 bg-red-500/10 text-red-500',
+    };
+    const Icon = status === 'completed' ? CheckCirclFillIcon : status === 'failed' ? InfoIcon : LoaderIcon;
+    return (
+      <div className={`flex items-center space-x-2 text-xs p-1.5 border rounded-md ${statusClasses[status]}`}>
+        <div className={status === 'active' ? 'animate-spin' : ''}><Icon size={12} /></div>
+        <span>{name}</span>
+      </div>
+    );
   };
 
   return (
@@ -292,43 +355,38 @@ export function FormalDocumentUpload({ chatId, disabled = false, className }: Fo
                 animate={{ opacity: 1, scale: 1 }}
                 className="bg-muted rounded-lg p-3 space-y-2"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2 min-w-0 flex-1">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start space-x-3">
                     {getStatusIcon(upload.status)}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{upload.fileName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {documentTypeLabels[upload.documentType]}
-                      </p>
+                    <div>
+                      <p className="text-sm font-medium">{upload.fileName}</p>
+                      <p className="text-xs text-muted-foreground">{documentTypeLabels[upload.documentType]}</p>
                     </div>
                   </div>
-                  
-                  <div className="flex items-center space-x-2">
-                    <Badge variant={upload.status === 'completed' ? 'default' : 
-                                   upload.status === 'failed' ? 'destructive' : 'secondary'}>
-                      {getStatusLabel(upload.status)}
-                    </Badge>
-                    
-                    {(upload.status === 'completed' || upload.status === 'failed') && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeUpload(index)}
-                        className="h-6 w-6 p-0"
-                      >
-                        <CrossIcon size={12} />
-                      </Button>
-                    )}
-                  </div>
+                  {(upload.status === 'completed' || upload.status === 'failed') && (
+                    <Button variant="ghost" size="sm" onClick={() => removeUpload(index)} className="h-6 w-6 p-0">
+                      <CrossIcon size={12} />
+                    </Button>
+                  )}
                 </div>
 
-                {upload.status !== 'completed' && upload.status !== 'failed' && (
-                  <Progress value={upload.progress} className="w-full h-1" />
-                )}
+                <div className="space-y-2 pt-2">
+                  <div className="flex space-x-2">
+                    {upload.steps.map(step => (
+                      <UploadStep key={step.name} {...step} />
+                    ))}
+                  </div>
 
-                {upload.error && (
-                  <p className="text-xs text-red-600 mt-1">{upload.error}</p>
-                )}
+                  {upload.status === 'scanning' && (
+                     <p className="text-xs text-muted-foreground text-center animate-pulse">
+                       Scan in progress. This may take a moment, please wait...
+                     </p>
+                  )}
+
+                  {upload.error && (
+                    <p className="text-xs text-red-500">{upload.error}</p>
+                  )}
+                </div>
               </motion.div>
             ))}
           </motion.div>

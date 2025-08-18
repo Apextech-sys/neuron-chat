@@ -1,7 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { FileValidator, ValidationResult, FileInfo, ThreatType } from './file-validator';
-import { Database, Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/database.types';
+import { Database, Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
 
 // Use exact types from generated database schema
 export type FileUploadRecord = Tables<'file_uploads'>;
@@ -188,7 +188,9 @@ export class ISPFileUploadHandler {
             engines: scanResult.engines,
             scanId: scanResult.scanId,
             timestamp: new Date().toISOString()
-          }
+          },
+          // @ts-ignore - virustotal_analysis is not in the generated types yet
+          virustotal_analysis: scanResult as any
         });
       }
 
@@ -369,7 +371,9 @@ export class ISPFileUploadHandler {
             scanId: scanResult.scanId,
             timestamp: new Date().toISOString(),
             documentType
-          }
+          },
+          // @ts-ignore - virustotal_analysis is not in the generated types yet
+          virustotal_analysis: scanResult as any
         });
       }
 
@@ -458,15 +462,14 @@ export class ISPFileUploadHandler {
     fileBuffer: Buffer,
     fileName: string
   ): Promise<VirusScanResult> {
-    // This is where you'd integrate with VirusTotal API or ClamAV
-    // For now, returning a mock implementation
-    
-    // Example with VirusTotal (you'd need to implement the actual API calls)
-    if (process.env.VIRUSTOTAL_API_KEY) {
+    // Prioritize VirusTotal if enabled
+    if (this.config.enableVirusScan && process.env.VIRUSTOTAL_API_KEY) {
+      console.log(`[VirusScan] Starting VirusTotal scan for: ${fileName}`);
       return await this.scanWithVirusTotal(fileBuffer, fileName);
     }
     
-    // Fallback to basic pattern detection from validator
+    // Fallback to basic (and flawed) pattern detection if VT is disabled
+    console.warn(`[VirusScan] VirusTotal is disabled, falling back to basic validation for: ${fileName}`);
     const validation = await this.fileValidator.validateFile(fileBuffer, fileName, true);
     
     if (!validation.valid) {
@@ -475,7 +478,8 @@ export class ISPFileUploadHandler {
         threatLevel: 'high',
         detections: validation.errors.length,
         engines: 1,
-        threats: validation.errors
+        threats: validation.errors,
+        scanId: 'local-validator'
       };
     }
 
@@ -484,39 +488,97 @@ export class ISPFileUploadHandler {
       threatLevel: 'none',
       detections: 0,
       engines: 1,
-      threats: []
+      threats: [],
+      scanId: 'local-validator-clean'
     };
   }
 
   /**
-   * VirusTotal integration (placeholder - implement actual API calls)
+   * Performs a file scan using the VirusTotal API.
+   * This involves uploading the file and then polling for the analysis results.
    */
   private async scanWithVirusTotal(
     fileBuffer: Buffer,
     fileName: string
   ): Promise<VirusScanResult> {
-    // Implement actual VirusTotal API integration here
-    // This is a placeholder that shows the structure
-    
     const apiKey = process.env.VIRUSTOTAL_API_KEY;
     if (!apiKey) {
+      console.error('[VirusScan] VirusTotal API key is not configured.');
       throw new Error('VirusTotal API key not configured');
     }
 
-    // TODO: Implement actual VirusTotal API calls
-    // 1. Upload file to VirusTotal
-    // 2. Poll for results
-    // 3. Parse and return scan results
+    const VT_API_URL = 'https://www.virustotal.com/api/v3';
+    const headers = { 'x-apikey': apiKey };
 
-    // Mock response for now
-    return {
-      clean: true,
-      threatLevel: 'none',
-      detections: 0,
-      engines: 70,
-      threats: [],
-      scanId: 'mock-scan-id'
-    };
+    try {
+      // Step 1: Upload the file to VirusTotal
+      const formData = new FormData();
+      // Convert Node.js Buffer to a plain ArrayBuffer for the Blob constructor
+      const plainArrayBuffer = Uint8Array.from(fileBuffer).buffer;
+      formData.append('file', new Blob([plainArrayBuffer]), fileName);
+
+      const uploadResponse = await fetch(`${VT_API_URL}/files`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        const errorBody = await uploadResponse.json();
+        console.error('[VirusScan] VirusTotal upload failed:', errorBody);
+        throw new Error(`VirusTotal API error: ${uploadResponse.statusText}`);
+      }
+
+      const uploadResult = await uploadResponse.json();
+      const analysisId = uploadResult.data.id;
+      console.log(`[VirusScan] File uploaded. Analysis ID: ${analysisId}`);
+
+      // Step 2: Poll for the analysis report
+      const maxAttempts = 15;
+      const pollInterval = 20000; // 20 seconds
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        console.log(`[VirusScan] Polling for results (Attempt ${attempt + 1}/${maxAttempts})...`);
+        
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+        const analysisResponse = await fetch(`${VT_API_URL}/analyses/${analysisId}`, { headers });
+        const analysisResult = await analysisResponse.json();
+
+        if (analysisResult.data?.attributes?.status === 'completed') {
+          console.log('[VirusScan] Scan completed.');
+          const stats = analysisResult.data.attributes.stats;
+          
+          const isMalicious = stats.malicious > 0 || stats.suspicious > 0;
+          const threatLevel = stats.malicious > 0 ? 'high' : (stats.suspicious > 0 ? 'medium' : 'none');
+
+          return {
+            clean: !isMalicious,
+            threatLevel,
+            detections: stats.malicious + stats.suspicious,
+            engines: stats.total,
+            threats: isMalicious ? Object.entries(analysisResult.data.attributes.results)
+              .filter(([, result]: any) => result.category === 'malicious' || result.category === 'suspicious')
+              .map(([engine, result]: any) => `${engine}: ${result.result}`) : [],
+            scanId: analysisId,
+          };
+        }
+      }
+
+      throw new Error('VirusTotal analysis timed out after several attempts.');
+
+    } catch (error) {
+      console.error('[VirusScan] An error occurred during VirusTotal scan:', error);
+      // Return a "failed" state
+      return {
+        clean: false,
+        threatLevel: 'critical',
+        detections: 0,
+        engines: 0,
+        threats: ['VirusTotal scan failed', error instanceof Error ? error.message : 'Unknown error'],
+        scanId: 'vt_scan_error',
+      };
+    }
   }
 
   /**
@@ -557,6 +619,7 @@ export class ISPFileUploadHandler {
     await this.updateFileRecord(supabase, fileRecord.id!, {
       scan_status: 'infected',
       scan_details: scanResult as any,
+      virustotal_analysis: scanResult as any, // Save the full report
       deleted_at: new Date().toISOString()
     });
 

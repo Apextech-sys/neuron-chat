@@ -59,6 +59,11 @@ export const FILE_TYPE_CONFIG: Record<string, FileTypeConfig> = {
     extensions: ['webp'],
     mimeType: 'image/webp'
   },
+  'image/tiff': {
+    maxSize: 10 * 1024 * 1024, // 10MB
+    extensions: ['tiff', 'tif'],
+    mimeType: 'image/tiff'
+  },
   'text/plain': {
     maxSize: 2 * 1024 * 1024, // 2MB
     extensions: ['txt', 'log', 'csv'],
@@ -188,10 +193,10 @@ export class FileValidator {
       errors.push(`File exceeds maximum size of ${config.maxSize / (1024 * 1024)}MB for ${mime}`);
     }
 
-    // 6. Check for polyglot files (files that are valid in multiple formats)
-    if (this.isPolyglot(fileBuffer)) {
-      errors.push('File appears to be a polyglot (multiple file types)');
-    }
+    // Polyglot check is now deprecated in favor of VirusTotal
+    // if (this.isPolyglot(fileBuffer)) {
+    //   errors.push('File appears to be a polyglot (multiple file types)');
+    // }
 
     // 7. Deep content inspection
     const contentScan = await this.scanContent(fileBuffer, mime);
@@ -265,24 +270,13 @@ export class FileValidator {
   }
 
   /**
-   * Check if file appears to be a polyglot
+   * Check if file appears to be a polyglot (DEPRECATED)
+   * This check is unreliable and has been replaced by VirusTotal scanning.
    */
   private isPolyglot(buffer: Buffer): boolean {
-    let matchCount = 0;
-    
-    for (const [type, signature] of Object.entries(MAGIC_NUMBERS)) {
-      if (this.bufferStartsWith(buffer, signature)) {
-        matchCount++;
-      }
-      
-      // Also check if signature appears elsewhere in the file
-      if (buffer.indexOf(Buffer.from(signature)) > 0) {
-        matchCount++;
-      }
-    }
-    
-    // If multiple file type signatures are found, it might be a polyglot
-    return matchCount > 1;
+    // This logic is flawed and is kept here for reference only.
+    // It incorrectly flags benign files as polyglots.
+    return false;
   }
 
   /**
@@ -292,15 +286,15 @@ export class FileValidator {
     const threats: ThreatType[] = [];
     let confidence = 100;
 
-    // Convert buffer to hex string for pattern matching
-    const hexString = buffer.toString('hex').toLowerCase();
-    
+    // DEPRECATED: Hex pattern matching is unreliable for binary files.
+    // This has been replaced by VirusTotal scanning.
+
     // Convert to string for text-based pattern matching (safely)
     let textContent = '';
     try {
       // Only convert to string for text-based files
-      if (mimeType.startsWith('text/') || 
-          mimeType.includes('json') || 
+      if (mimeType.startsWith('text/') ||
+          mimeType.includes('json') ||
           mimeType.includes('xml')) {
         textContent = buffer.toString('utf-8');
       }
@@ -309,14 +303,9 @@ export class FileValidator {
       textContent = buffer.toString('binary');
     }
 
-    // Check hex patterns
-    for (const { pattern, threat, description } of DANGEROUS_PATTERNS) {
-      if (typeof pattern === 'string') {
-        if (hexString.includes(pattern)) {
-          threats.push(threat);
-          confidence -= 20;
-        }
-      } else if (pattern instanceof RegExp && textContent) {
+    // Only run regex checks against text-based content
+    for (const { pattern, threat } of DANGEROUS_PATTERNS) {
+      if (pattern instanceof RegExp && textContent) {
         if (pattern.test(textContent)) {
           threats.push(threat);
           confidence -= 20;

@@ -35,6 +35,7 @@ export default async function Page(props: { params: Promise<any> }) {
     <PreviewChat
       id={chat.id}
       initialMessages={convertToUIMessages(messagesFromDb)}
+      selectedModelId="requesty/openai/gpt-5-mini:flex"
     />
   );
 }

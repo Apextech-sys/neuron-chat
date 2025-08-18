@@ -293,6 +293,20 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
+    // Immediately mark session as queued/uploading to avoid polling races
+    const { error: preUpdateError } = await supabase
+      .from('file_upload_sessions')
+      .update({
+        status: 'uploading',
+        progress_percentage: 5,
+        current_step: 'Queued for processing...'
+      })
+      .eq('session_token', sessionToken);
+
+    if (preUpdateError) {
+      console.warn(`[FormalDocAPI] Pre-update failed for session ${sessionToken}:`, preUpdateError);
+    }
+
     // Start async processing
     console.log(`[FormalDocAPI] Starting async processing for session: ${sessionToken}`);
     
